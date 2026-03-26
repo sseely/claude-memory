@@ -16,6 +16,8 @@ See [MEMORY_SYSTEM.md](MEMORY_SYSTEM.md) for the full specification.
 ## Prerequisites
 
 - Docker and Docker Compose v2+
+- `curl` on the host (used by health check scripts)
+- [bats-core](https://github.com/bats-core/bats-core) (optional, for running tests)
 
 ## Quick start
 
@@ -61,6 +63,16 @@ Point agents at the MCP server by adding to your MCP config:
 |--------|-------------|
 | `scripts/start.sh` | Start all services and wait for health |
 | `scripts/health-check.sh` | Point-in-time health check of all endpoints |
+| `scripts/lib.sh` | Shared utilities (endpoint URLs, `check_endpoint`) |
+
+`start.sh` supports environment overrides: `TIMEOUT` (default 120s)
+and `POLL_INTERVAL` (default 5s).
+
+## Testing
+
+```bash
+bats test/
+```
 
 ## Memory curator agent
 

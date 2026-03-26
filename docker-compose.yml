@@ -1,9 +1,9 @@
 services:
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.17.0
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
     volumes:
       - ./data/qdrant:/qdrant/storage
     restart: unless-stopped
@@ -12,11 +12,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   mem0:
-    image: mem0ai/mem0:latest
+    image: mem0ai/mem0:v1.0.7
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       VECTOR_STORE_PROVIDER: qdrant
       QDRANT_HOST: qdrant
@@ -30,11 +31,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   mem0-mcp:
-    build: https://github.com/mem0ai/mem0-mcp.git
+    build: https://github.com/mem0ai/mem0-mcp.git#624024deacbbe1948572a968abdb9d9e93ded548
     ports:
-      - "8050:8050"
+      - "127.0.0.1:8050:8050"
     environment:
       MEM0_API_KEY: ${MEM0_API_KEY}
       MEM0_DEFAULT_USER_ID: ${MEM0_DEFAULT_USER_ID:-default}

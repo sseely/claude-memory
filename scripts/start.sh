@@ -4,54 +4,50 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-QDRANT_URL="http://localhost:6333/healthz"
-MEM0_MCP_URL="http://localhost:8050/sse"
-POLL_INTERVAL=5
-TIMEOUT=120
+# shellcheck source=lib.sh
+source "${SCRIPT_DIR}/lib.sh"
+
+POLL_INTERVAL="${POLL_INTERVAL:-5}"
+TIMEOUT="${TIMEOUT:-120}"
 
 cd "${PROJECT_ROOT}"
 
 echo "Starting docker compose services..."
-docker compose up -d
-
-check_endpoint() {
-  local name="$1"
-  local url="$2"
-  local http_code
-  http_code="$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "${url}" 2>/dev/null || echo "000")"
-  if [[ "${http_code}" =~ ^2[0-9]{2}$ ]]; then
-    return 0
-  else
-    return 1
-  fi
-}
+if ! docker compose up -d; then
+  echo "ERROR: docker compose startup failed" >&2
+  exit 1
+fi
 
 wait_for_service() {
   local name="$1"
   local url="$2"
   local deadline=$(( $(date +%s) + TIMEOUT ))
 
-  echo "Waiting for ${name} at ${url}..."
   while [[ "$(date +%s)" -lt "${deadline}" ]]; do
-    if check_endpoint "${name}" "${url}"; then
+    if check_endpoint "${url}"; then
       echo "  ${name}: OK"
       return 0
     fi
     sleep "${POLL_INTERVAL}"
   done
 
-  echo "  ${name}: TIMEOUT after ${TIMEOUT}s"
+  echo "  ${name}: TIMEOUT after ${TIMEOUT}s" >&2
   return 1
 }
 
-overall_exit=0
+echo "Waiting for services..."
 
-wait_for_service "qdrant"   "${QDRANT_URL}"   || overall_exit=1
-wait_for_service "mem0-mcp" "${MEM0_MCP_URL}" || overall_exit=1
+qdrant_ok=0
+mcp_ok=0
 
-echo ""
-echo "Service status:"
-if check_endpoint "qdrant"   "${QDRANT_URL}";   then echo "  qdrant:   OK"; else echo "  qdrant:   FAIL"; overall_exit=1; fi
-if check_endpoint "mem0-mcp" "${MEM0_MCP_URL}"; then echo "  mem0-mcp: OK"; else echo "  mem0-mcp: FAIL"; overall_exit=1; fi
+wait_for_service "qdrant" "${QDRANT_URL}" &
+qdrant_pid=$!
 
+wait_for_service "mem0-mcp" "${MEM0_MCP_URL}" &
+mcp_pid=$!
+
+wait "${qdrant_pid}" || qdrant_ok=1
+wait "${mcp_pid}" || mcp_ok=1
+
+overall_exit=$(( qdrant_ok | mcp_ok ))
 exit "${overall_exit}"

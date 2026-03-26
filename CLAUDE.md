@@ -19,6 +19,7 @@ promotion.
 docker compose up -d         # start without health polling
 docker compose down          # stop services
 docker compose logs -f       # tail all service logs
+bats test/                   # run shell script tests
 ```
 
 ## Services

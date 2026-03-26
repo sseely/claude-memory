@@ -19,46 +19,75 @@ The memory system runs as three containers via Docker Compose:
 
 ### Docker Compose
 
-A `docker-compose.yml` must be created with the following services:
+The `docker-compose.yml` defines all three services with health checks,
+dependency ordering, and localhost-only port bindings:
 
 ```yaml
 services:
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.17.0
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
     volumes:
-      - qdrant_data:/qdrant/storage
+      - ./data/qdrant:/qdrant/storage
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   mem0:
-    image: mem0ai/mem0:latest
+    image: mem0ai/mem0:v1.0.7
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
-      - VECTOR_STORE_PROVIDER=qdrant
-      - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
+      VECTOR_STORE_PROVIDER: qdrant
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
     depends_on:
-      - qdrant
+      qdrant:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   mem0-mcp:
-    build: https://github.com/mem0ai/mem0-mcp.git
+    build: https://github.com/mem0ai/mem0-mcp.git#624024de
     ports:
-      - "8050:8050"
+      - "127.0.0.1:8050:8050"
     environment:
-      - MEM0_API_KEY=${MEM0_API_KEY}
-      - MEM0_DEFAULT_USER_ID=${MEM0_DEFAULT_USER_ID:-default}
-      - TRANSPORT=sse
+      MEM0_API_KEY: ${MEM0_API_KEY}
+      MEM0_DEFAULT_USER_ID: ${MEM0_DEFAULT_USER_ID:-default}
+      TRANSPORT: sse
     depends_on:
-      - mem0
+      mem0:
+        condition: service_healthy
     restart: unless-stopped
-
-volumes:
-  qdrant_data:
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8050/sse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 ```
+
+Design choices:
+- **Bind mounts** (`./data/qdrant/`) instead of named volumes — data
+  survives `docker compose down -v`, is visible on the host, and is
+  straightforward to back up.
+- **`depends_on: condition: service_healthy`** ensures services start
+  only after their dependencies pass health checks.
+- **`start_period`** on every service gives containers time to
+  initialize before Docker marks them unhealthy.
+- **Localhost-only ports** (`127.0.0.1:...`) prevent unauthenticated
+  network access from other hosts.
 
 ### Startup
 
@@ -104,11 +133,68 @@ curl http://localhost:8050/sse
 
 ### Notes
 
-- `qdrant_data` volume persists memories across container restarts
+- Bind-mounted `./data/` directories persist memories across container restarts
 - The Mem0 container handles embedding generation and memory extraction
 - The MCP server is stateless — it proxies to Mem0, which proxies to Qdrant
 - If the MCP server goes down, agents lose memory tools but continue working — they just won't have recall
-- Review Mem0 and Qdrant docs before production deployment to validate image tags, env vars, and port mappings against current releases
+- Image versions are pinned in `docker-compose.yml` — update them periodically and test before deploying
+
+## Memory Scoping
+
+Every memory stored in Mem0 must be tagged with a scope:
+
+- `repo:{name}` — specific to a single repository. Conventions, API quirks, config deviations, codebase-specific patterns.
+- `project:{name}` — spans multiple repos within a project. Integration patterns, shared service behaviors, cross-repo dependencies.
+- `org` — universally applicable. Cloud provider gotchas, infrastructure patterns, tooling discoveries, language-level findings.
+
+### Curator Scoping Rule
+
+When evaluating a memory, ask: "Would an agent working on a different repo benefit from this?" If yes, it's at least project-scoped. "Would an agent on a completely different project benefit?" If yes, it's org-scoped. Default to the narrowest scope that's accurate.
+
+## Memory Durability
+
+Every memory must be classified as one of:
+
+- `important` — durable fact unlikely to change. API doesn't support pagination. Service X requires auth header Y. This pattern causes memory leaks in Node 20.
+- `contextual` — true now, likely to change. Staging is on v2.3. Build is broken due to dependency conflict. Rate limit is currently 100/min.
+
+### Durability Rules
+
+- `important` memories persist until explicitly contradicted by a new observation.
+- `contextual` memories get a TTL tag (default: 30 days). After TTL, they're flagged for review or automatic removal.
+- When a new observation contradicts an `important` memory, update the memory and log the change.
+
+## Search Behavior
+
+### Default: Scoped Search
+
+When an agent searches memory before starting a task:
+
+1. Search `repo:{current-repo}` scope
+2. Search `org` scope
+3. Merge results, deduplicate, inject into context
+
+### Fallback: Widening Search
+
+If scoped search returns no relevant results:
+
+1. Widen to `project:{current-project}` scope
+2. If still empty, widen to global (all scopes, unfiltered)
+3. Apply relevance threshold — low-confidence results from wide searches are worse than no results
+
+### Explicit Global Search
+
+When explicitly instructed to search globally, skip scoping entirely and search across all memories. Use this when:
+
+- Investigating whether a problem has been seen anywhere before
+- Looking for patterns that might apply cross-project
+- Auditing what the system knows about a topic regardless of where it was learned
+
+### Search Result Injection
+
+- Always state what memories were found and from what scope before proceeding
+- If a memory is from a different repo/project, flag it: "This was observed in {scope} — verify it applies here before relying on it"
+- Never silently apply cross-scope memories as if they are local facts
 
 ## Before Starting Any Task
 
@@ -170,7 +256,7 @@ A dedicated agent reads local `.agent-notes/` files and decides what enters long
 
 - Deduplicate against existing memories before adding
 - Synthesize if multiple agents discovered the same thing — store one clean memory, not three noisy ones
-- Tag with relevant scope: project, codebase, service, language, or domain
+- Tag with scope (`repo:`, `project:`, or `org`) and durability (`important` or `contextual`)
 - If a new observation contradicts an existing memory, update or replace — do not create conflicting entries
 
 ## Mem0 MCP Tools Reference
@@ -184,12 +270,6 @@ Available tools (provided via MCP):
 | `update_memory` | When a stored memory is partially outdated but still relevant. |
 | `delete_memory` | When a stored memory is fully obsolete or incorrect. |
 | `list_memories` | When you need to audit what's stored for a given scope. |
-
-## Scoping
-
-- Agents on the same workstream share a memory scope via `agent_id` or project-level tagging
-- Cross-project memories (e.g., infrastructure patterns, org-wide conventions) use a shared scope
-- Per-agent scratch observations stay local and never enter Mem0 without curation
 
 ## What This System Replaces
 
