@@ -1,0 +1,5 @@
+.env
+data/
+.agent-notes/
+plans/
+.claude/
