@@ -1,5 +1,6 @@
 .env
 data/
-.agent-notes/
+.agent-notes/*
+!.agent-notes/.gitkeep
 plans/
 .claude/
