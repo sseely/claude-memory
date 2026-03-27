@@ -2,16 +2,29 @@
 
 ## Architecture
 
-This system uses a two-tier memory architecture:
+This system combines two complementary capabilities:
 
-1. **Local observations** — raw notes written to `.agent-notes/` in the working directory during task execution
-2. **Long-term memory** — curated, high-value discoveries stored in Mem0 via MCP
+- **Memory** (Mem0) — persistent cross-session knowledge: what agents have learned over time
+- **Code intelligence** (Serena) — real-time code navigation via LSP: what agents can see right now
 
-All agents have access to Mem0 MCP tools. Not all agents write directly to long-term memory.
+Together they form a feedback loop: Serena helps agents explore code
+efficiently, discoveries flow through `.agent-notes/` to the curator,
+and Mem0 stores the durable insights that make future Serena queries
+more targeted.
+
+### Three tiers
+
+1. **Local observations** — raw notes written to `.agent-notes/` during task execution
+2. **Long-term memory** (Mem0) — curated, high-value discoveries stored via MCP
+3. **Code intelligence** (Serena) — symbol-level navigation, references, and precise edits via LSP
+
+All agents have access to both Mem0 and Serena MCP tools.
 
 ## Infrastructure Setup
 
-The memory system runs as three containers via Docker Compose:
+### Mem0 stack (Docker)
+
+The memory layer runs as three containers via Docker Compose:
 
 - **Qdrant** — vector database for semantic search over stored memories
 - **Mem0** — memory extraction, deduplication, and management layer
@@ -95,9 +108,7 @@ Design choices:
 docker compose up -d
 ```
 
-### MCP Client Configuration
-
-Point agents at the MCP server:
+### MCP Client Configuration (Mem0 only)
 
 ```json
 {
@@ -138,6 +149,99 @@ curl http://localhost:8050/sse
 - The MCP server is stateless — it proxies to Mem0, which proxies to Qdrant
 - If the MCP server goes down, agents lose memory tools but continue working — they just won't have recall
 - Image versions are pinned in `docker-compose.yml` — update them periodically and test before deploying
+
+### Serena (local, stdio)
+
+Serena is an MCP server that provides IDE-like code intelligence via
+LSP. Claude Code spawns it automatically — no long-running process needed.
+
+**Prerequisites:**
+
+- Python 3.11+ and [uv](https://docs.astral.sh/uv/) (`pip install uv`)
+- LSP servers for your languages (many auto-install):
+  - TypeScript: `npm i -g typescript-language-server typescript`
+  - Python: `pip install python-lsp-server`
+  - Go: `go install golang.org/x/tools/gopls@latest`
+  - Rust: installed with `rustup component add rust-analyzer`
+
+**Register with Claude Code:**
+
+```bash
+claude mcp add serena \
+  -- uvx --from git+https://github.com/oraios/serena \
+  serena start-mcp-server
+```
+
+**Per-project configuration:**
+
+Create `.serena/project.yml` in each repo:
+
+```yaml
+languages:
+  - name: typescript
+    language_server: typescript-language-server --stdio
+```
+
+Serena creates `.serena/memories/` (markdown notes) and
+`.serena/cache/` (symbol indexes) per project. Add `.serena/cache/`
+to `.gitignore`; optionally commit `.serena/memories/` for shared
+team context.
+
+**Key tools provided:**
+
+| Tool | Use |
+|------|-----|
+| `find_symbol` | Find a class, function, or variable by name |
+| `find_referencing_symbols` | Find all callers of a symbol |
+| `get_symbol_definition` | Get full source of a symbol |
+| `insert_after_symbol` | Edit code precisely without reading the file |
+| `replace_symbol` | Replace a symbol's implementation |
+| `activate_project` | Switch Serena to a different repo |
+
+### Combined MCP Configuration
+
+Configure both servers in `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "mem0": {
+      "transport": "sse",
+      "url": "http://localhost:8050/sse"
+    },
+    "serena": {
+      "command": "uvx",
+      "args": [
+        "--from", "git+https://github.com/oraios/serena",
+        "serena", "start-mcp-server"
+      ]
+    }
+  }
+}
+```
+
+### How they work together
+
+```
+  Serena (real-time)              Mem0 (persistent)
+  ┌─────────────────┐            ┌─────────────────┐
+  │ find_symbol      │            │ search_memories  │
+  │ find_references  │──discover──▶ .agent-notes/   │
+  │ get_definition   │            │     │            │
+  └─────────────────┘            │  curator         │
+         ▲                       │     │            │
+         │                       │  add_memory      │
+         │ targeted queries      │     │            │
+         └───────────────────────│  "entry points   │
+                                 │   are X, Y, Z"   │
+                                 └─────────────────┘
+```
+
+1. Agent starts a task → searches Mem0 for prior knowledge
+2. Mem0 returns: "this repo uses repository pattern, entry points are routes.ts and worker.ts"
+3. Agent uses Serena to navigate: `find_symbol("UserRepository")` → exact definition
+4. Agent discovers something non-obvious during work → writes to `.agent-notes/`
+5. Curator evaluates → promotes durable insights to Mem0 for next session
 
 ## Memory Scoping
 
@@ -198,11 +302,12 @@ When explicitly instructed to search globally, skip scoping entirely and search 
 
 ## Before Starting Any Task
 
-1. Search Mem0 for prior discoveries related to the current task, codebase, file, or pattern
-2. Read any local `.agent-notes/` files in the working directory
-3. Use what you find to skip redundant discovery — do not re-investigate what is already known
+1. **Recall** — search Mem0 for prior discoveries related to the task, codebase, or pattern
+2. **Read** — check local `.agent-notes/` files in the working directory
+3. **Orient** — if Serena is available, use `find_symbol` or `activate_project` to understand the codebase structure before diving in
+4. **Skip** — do not re-investigate what is already known from steps 1-3
 
-If memory search returns relevant results, state what you found and how it affects your approach before proceeding.
+State what you found and how it affects your approach before proceeding.
 
 ## During Task Execution
 

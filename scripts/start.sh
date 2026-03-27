@@ -12,6 +12,8 @@ TIMEOUT="${TIMEOUT:-120}"
 
 cd "${PROJECT_ROOT}"
 
+# --- Mem0 stack (Docker) ---
+
 echo "Starting docker compose services..."
 if ! docker compose up -d; then
   echo "ERROR: docker compose startup failed" >&2
@@ -35,7 +37,7 @@ wait_for_service() {
   return 1
 }
 
-echo "Waiting for services..."
+echo "Waiting for Mem0 stack..."
 
 qdrant_ok=0
 mcp_ok=0
@@ -49,5 +51,25 @@ mcp_pid=$!
 wait "${qdrant_pid}" || qdrant_ok=1
 wait "${mcp_pid}" || mcp_ok=1
 
+# --- Serena (local, stdio) ---
+
+echo ""
+echo "Checking Serena..."
+if check_serena; then
+  echo "  serena: OK (uvx available)"
+else
+  echo "  serena: NOT INSTALLED"
+  echo "  Install: pip install uv && uvx --from git+https://github.com/oraios/serena serena --help"
+  qdrant_ok=1
+fi
+
 overall_exit=$(( qdrant_ok | mcp_ok ))
+
+echo ""
+if [[ "${overall_exit}" -eq 0 ]]; then
+  echo "All services ready."
+else
+  echo "Some services failed. Check output above."
+fi
+
 exit "${overall_exit}"
