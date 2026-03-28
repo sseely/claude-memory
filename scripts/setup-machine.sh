@@ -47,7 +47,7 @@ echo ""
 if [[ ! -f "${PROJECT_ROOT}/.env" ]]; then
   echo "Creating .env from .env.example..."
   cp "${PROJECT_ROOT}/.env.example" "${PROJECT_ROOT}/.env"
-  echo "  IMPORTANT: Edit ${PROJECT_ROOT}/.env — set OPENAI_API_KEY or configure Ollama"
+  echo "  Defaults use Ollama — ensure ollama is running with llama3.1 and nomic-embed-text"
 else
   echo ".env already exists."
 fi

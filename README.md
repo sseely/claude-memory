@@ -23,7 +23,7 @@ See [MEMORY_SYSTEM.md](MEMORY_SYSTEM.md) for the full specification.
 - Docker and Docker Compose v2+
 - Python 3.11+ and [uv](https://docs.astral.sh/uv/) (`brew install uv`)
 - `curl` on the host (used by health check scripts)
-- OpenAI API key **or** [Ollama](https://ollama.com/) for fully offline operation
+- [Ollama](https://ollama.com/) running locally with `llama3.1` and `nomic-embed-text` models pulled
 - LSP servers for your languages (see MEMORY_SYSTEM.md)
 - [bats-core](https://github.com/bats-core/bats-core) (optional, for tests)
 
@@ -32,7 +32,7 @@ See [MEMORY_SYSTEM.md](MEMORY_SYSTEM.md) for the full specification.
 ```bash
 # 1. Configure environment
 cp .env.example .env
-# Edit .env — set OPENAI_API_KEY or configure Ollama (see .env.example)
+# Defaults work if Ollama is running with llama3.1 and nomic-embed-text
 
 # 2. Register Serena with Claude Code
 claude mcp add serena \
@@ -50,12 +50,15 @@ claude mcp add serena \
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `OPENAI_API_KEY` | Yes* | — | OpenAI key for extraction + embeddings |
 | `USER` | No | `default` | User scope for memories |
-| `LLM_PROVIDER` | No | `openai` | `openai` or `ollama` |
-| `EMBEDDER_PROVIDER` | No | `openai` | `openai` or `ollama` |
+| `LLM_PROVIDER` | — | `ollama` | LLM backend |
+| `LLM_MODEL` | — | `llama3.1:latest` | Extraction model |
+| `EMBEDDER_PROVIDER` | — | `ollama` | Embedding backend |
+| `EMBEDDER_MODEL` | — | `nomic-embed-text` | Embedding model |
+| `EMBEDDER_MODEL_DIMS` | — | `768` | Embedding dimensions (must match model) |
+| `OLLAMA_BASE_URL` | — | `http://host.docker.internal:11434` | Ollama endpoint |
 
-*Not required if using Ollama. See `.env.example` for full Ollama config.
+All defaults are set in `.env.example`. Just copy and start.
 
 ## MCP client configuration
 

@@ -31,9 +31,8 @@ architecture:
 - **Qdrant** — vector database for semantic search over stored memories
 - **OpenMemory MCP** — memory extraction, deduplication, and MCP tools (FastAPI server backed by Mem0)
 
-Default setup uses OpenAI (gpt-5-nano for extraction,
-text-embedding-3-small for embeddings). Swap both for Ollama models
-to go fully offline — see `.env.example`.
+Uses Ollama for fully local operation — llama3.1 for memory
+extraction, nomic-embed-text for embeddings. No external API calls.
 
 ### Docker Compose
 
@@ -73,15 +72,23 @@ docker compose up -d
 
 ### Environment Variables
 
-Copy `.env.example` to `.env`. Default uses OpenAI:
+Copy `.env.example` to `.env`. Defaults use Ollama (fully local):
 
 ```
-OPENAI_API_KEY=sk-your-key-here
 USER=default
+LLM_PROVIDER=ollama
+LLM_MODEL=llama3.1:latest
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+EMBEDDER_PROVIDER=ollama
+EMBEDDER_MODEL=nomic-embed-text
+EMBEDDER_MODEL_DIMS=768
 ```
 
-For fully offline operation with Ollama, see `.env.example` for the
-complete Ollama configuration (LLM_PROVIDER, EMBEDDER_PROVIDER, etc.).
+Requires Ollama running on the host:
+```bash
+ollama pull llama3.1
+ollama pull nomic-embed-text
+```
 
 ### Verification
 
