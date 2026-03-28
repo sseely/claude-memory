@@ -8,45 +8,29 @@ services:
       - ./data/qdrant:/qdrant/storage
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333'"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
 
-  mem0:
-    image: mem0ai/mem0:v1.0.7
+  openmemory-mcp:
+    image: mem0/openmemory-mcp:latest
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8765:8765"
+    env_file:
+      - .env
     environment:
-      VECTOR_STORE_PROVIDER: qdrant
       QDRANT_HOST: qdrant
       QDRANT_PORT: "6333"
     depends_on:
       qdrant:
         condition: service_healthy
     restart: unless-stopped
+    command: >
+      sh -c "uvicorn main:app --host 0.0.0.0 --port 8765 --workers 4"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
-  mem0-mcp:
-    build: https://github.com/mem0ai/mem0-mcp.git#624024deacbbe1948572a968abdb9d9e93ded548
-    ports:
-      - "127.0.0.1:8050:8050"
-    environment:
-      MEM0_API_KEY: ${MEM0_API_KEY}
-      MEM0_DEFAULT_USER_ID: ${MEM0_DEFAULT_USER_ID:-default}
-      TRANSPORT: sse
-    depends_on:
-      mem0:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8050/sse"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8765')\""]
       interval: 10s
       timeout: 5s
       retries: 5

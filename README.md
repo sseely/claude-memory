@@ -1,17 +1,16 @@
 # claude-memory
 
-Agent intelligence system combining persistent memory (Mem0) with
-real-time code navigation (Serena). Agents remember what they've
+Agent intelligence system combining persistent memory (OpenMemory/Mem0)
+with real-time code navigation (Serena). Agents remember what they've
 learned and see code at the symbol level.
 
 ## Architecture
 
 Two complementary MCP servers:
 
-- **Mem0 stack** (Docker) — long-term semantic memory
+- **OpenMemory stack** (Docker) — long-term semantic memory
   - Qdrant (port 6333) — vector database
-  - Mem0 (port 8080) — memory extraction and deduplication
-  - Mem0 MCP Server (port 8050) — exposes Mem0 as MCP tools
+  - OpenMemory MCP (port 8765) — memory API + MCP tools
 - **Serena** (local, stdio) — code intelligence via LSP
   - Symbol-level navigation across 40+ languages
   - Precise editing without reading entire files
@@ -22,9 +21,10 @@ See [MEMORY_SYSTEM.md](MEMORY_SYSTEM.md) for the full specification.
 ## Prerequisites
 
 - Docker and Docker Compose v2+
-- Python 3.11+ and [uv](https://docs.astral.sh/uv/) (`pip install uv`)
+- Python 3.11+ and [uv](https://docs.astral.sh/uv/) (`brew install uv`)
 - `curl` on the host (used by health check scripts)
-- LSP servers for your languages (see MEMORY_SYSTEM.md for list)
+- OpenAI API key **or** [Ollama](https://ollama.com/) for fully offline operation
+- LSP servers for your languages (see MEMORY_SYSTEM.md)
 - [bats-core](https://github.com/bats-core/bats-core) (optional, for tests)
 
 ## Quick start
@@ -32,17 +32,17 @@ See [MEMORY_SYSTEM.md](MEMORY_SYSTEM.md) for the full specification.
 ```bash
 # 1. Configure environment
 cp .env.example .env
-# Edit .env with your MEM0_API_KEY and optional MEM0_DEFAULT_USER_ID
+# Edit .env — set OPENAI_API_KEY or configure Ollama (see .env.example)
 
 # 2. Register Serena with Claude Code
 claude mcp add serena \
   -- uvx --from git+https://github.com/oraios/serena \
   serena start-mcp-server
 
-# 3. Start Mem0 stack and verify everything
+# 3. Start stack and verify
 ./scripts/start.sh
 
-# 4. Verify health
+# 4. Check health
 ./scripts/health-check.sh
 ```
 
@@ -50,21 +50,23 @@ claude mcp add serena \
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `MEM0_API_KEY` | Yes | — | API key for Mem0 |
-| `MEM0_DEFAULT_USER_ID` | No | `default` | Default user scope for memories |
+| `OPENAI_API_KEY` | Yes* | — | OpenAI key for extraction + embeddings |
+| `USER` | No | `default` | User scope for memories |
+| `LLM_PROVIDER` | No | `openai` | `openai` or `ollama` |
+| `EMBEDDER_PROVIDER` | No | `openai` | `openai` or `ollama` |
 
-Copy `.env.example` to `.env` and fill in values before starting.
+*Not required if using Ollama. See `.env.example` for full Ollama config.
 
 ## MCP client configuration
 
-Configure both servers in `.mcp.json`:
+Both servers in `~/.claude/.mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "mem0": {
       "transport": "sse",
-      "url": "http://localhost:8050/sse"
+      "url": "http://localhost:8765/sse"
     },
     "serena": {
       "command": "uvx",
@@ -81,8 +83,9 @@ Configure both servers in `.mcp.json`:
 
 | Script | Description |
 |--------|-------------|
-| `scripts/start.sh` | Start Mem0 stack, verify Serena installed |
-| `scripts/health-check.sh` | Check all services (Mem0 endpoints + Serena) |
+| `scripts/start.sh` | Start Docker stack, verify Serena installed |
+| `scripts/health-check.sh` | Check all services |
+| `scripts/setup-machine.sh` | One-time machine setup (MCP config + launchd) |
 | `scripts/lib.sh` | Shared utilities |
 
 `start.sh` supports environment overrides: `TIMEOUT` (default 120s)
@@ -110,13 +113,11 @@ The memory curator agent at
 `~/.claude/agents/09-meta-orchestration/memory-curator.md`
 is sourced from this repo. It evaluates `.agent-notes/*.md`
 observations against sponge-worthy criteria and promotes
-qualifying insights to Mem0 — including structural maps
-discovered via Serena.
+qualifying insights to Mem0.
 
 ## Stopping services
 
 ```bash
-docker compose down      # stop Mem0 stack, preserve data
-docker compose down -v   # stop (data in ./data/ survives)
+docker compose down      # stop Docker stack, preserve data
 # Serena stops automatically when Claude Code exits
 ```

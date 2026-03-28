@@ -12,7 +12,7 @@ TIMEOUT="${TIMEOUT:-120}"
 
 cd "${PROJECT_ROOT}"
 
-# --- Mem0 stack (Docker) ---
+# --- OpenMemory stack (Docker) ---
 
 echo "Starting docker compose services..."
 if ! docker compose up -d; then
@@ -37,7 +37,7 @@ wait_for_service() {
   return 1
 }
 
-echo "Waiting for Mem0 stack..."
+echo "Waiting for services..."
 
 qdrant_ok=0
 mcp_ok=0
@@ -45,7 +45,7 @@ mcp_ok=0
 wait_for_service "qdrant" "${QDRANT_URL}" &
 qdrant_pid=$!
 
-wait_for_service "mem0-mcp" "${MEM0_MCP_URL}" &
+wait_for_service "openmemory-mcp" "${OPENMEMORY_URL}" &
 mcp_pid=$!
 
 wait "${qdrant_pid}" || qdrant_ok=1

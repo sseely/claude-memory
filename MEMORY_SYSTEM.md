@@ -22,85 +22,35 @@ All agents have access to both Mem0 and Serena MCP tools.
 
 ## Infrastructure Setup
 
-### Mem0 stack (Docker)
+### OpenMemory stack (Docker)
 
-The memory layer runs as three containers via Docker Compose:
+The memory layer runs as two containers via Docker Compose, using the
+[OpenMemory MCP](https://github.com/mem0ai/mem0/tree/main/openmemory)
+architecture:
 
 - **Qdrant** — vector database for semantic search over stored memories
-- **Mem0** — memory extraction, deduplication, and management layer
-- **Mem0 MCP Server** — exposes Mem0 operations as MCP tools for agents
+- **OpenMemory MCP** — memory extraction, deduplication, and MCP tools (FastAPI server backed by Mem0)
+
+Default setup uses OpenAI (gpt-5-nano for extraction,
+text-embedding-3-small for embeddings). Swap both for Ollama models
+to go fully offline — see `.env.example`.
 
 ### Docker Compose
 
-The `docker-compose.yml` defines all three services with health checks,
-dependency ordering, and localhost-only port bindings:
+See `docker-compose.yml` for the full definition. Key properties:
 
-```yaml
-services:
-  qdrant:
-    image: qdrant/qdrant:v1.17.0
-    ports:
-      - "127.0.0.1:6333:6333"
-      - "127.0.0.1:6334:6334"
-    volumes:
-      - ./data/qdrant:/qdrant/storage
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
-  mem0:
-    image: mem0ai/mem0:v1.0.7
-    ports:
-      - "127.0.0.1:8080:8080"
-    environment:
-      VECTOR_STORE_PROVIDER: qdrant
-      QDRANT_HOST: qdrant
-      QDRANT_PORT: "6333"
-    depends_on:
-      qdrant:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
-  mem0-mcp:
-    build: https://github.com/mem0ai/mem0-mcp.git#624024de
-    ports:
-      - "127.0.0.1:8050:8050"
-    environment:
-      MEM0_API_KEY: ${MEM0_API_KEY}
-      MEM0_DEFAULT_USER_ID: ${MEM0_DEFAULT_USER_ID:-default}
-      TRANSPORT: sse
-    depends_on:
-      mem0:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8050/sse"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-```
+- **Qdrant** — `qdrant/qdrant:v1.17.0`, port 6333, bind mount at `./data/qdrant:/qdrant/storage`
+- **OpenMemory MCP** — `mem0/openmemory-mcp:latest`, port 8765, reads `.env` for provider config
+- Health checks on both services, `depends_on: condition: service_healthy`
+- Localhost-only port bindings (`127.0.0.1:...`)
 
 Design choices:
-- **Bind mounts** (`./data/qdrant/`) instead of named volumes — data
-  survives `docker compose down -v`, is visible on the host, and is
+- **Bind mounts** instead of named volumes — data survives
+  `docker compose down -v`, is visible on the host, and is
   straightforward to back up.
-- **`depends_on: condition: service_healthy`** ensures services start
-  only after their dependencies pass health checks.
-- **`start_period`** on every service gives containers time to
-  initialize before Docker marks them unhealthy.
-- **Localhost-only ports** (`127.0.0.1:...`) prevent unauthenticated
-  network access from other hosts.
+- **Localhost-only ports** prevent unauthenticated network access.
+- **Two services, not three** — OpenMemory MCP includes the Mem0
+  memory layer internally; no separate API server needed.
 
 ### Startup
 
@@ -115,7 +65,7 @@ docker compose up -d
   "mcpServers": {
     "mem0": {
       "transport": "sse",
-      "url": "http://localhost:8050/sse"
+      "url": "http://localhost:8765/sse"
     }
   }
 }
@@ -123,32 +73,34 @@ docker compose up -d
 
 ### Environment Variables
 
-Create a `.env` file alongside the compose file:
+Copy `.env.example` to `.env`. Default uses OpenAI:
 
 ```
-MEM0_API_KEY=<your-mem0-api-key>
-MEM0_DEFAULT_USER_ID=<your-user-id>
+OPENAI_API_KEY=sk-your-key-here
+USER=default
 ```
+
+For fully offline operation with Ollama, see `.env.example` for the
+complete Ollama configuration (LLM_PROVIDER, EMBEDDER_PROVIDER, etc.).
 
 ### Verification
 
-After `docker compose up -d`, confirm all three services are healthy:
+After `docker compose up -d`, confirm both services are healthy:
 
 ```bash
 # Qdrant health
 curl http://localhost:6333/healthz
 
-# Mem0 MCP tools available
-curl http://localhost:8050/sse
+# OpenMemory MCP
+curl http://localhost:8765
 ```
 
 ### Notes
 
-- Bind-mounted `./data/` directories persist memories across container restarts
-- The Mem0 container handles embedding generation and memory extraction
-- The MCP server is stateless — it proxies to Mem0, which proxies to Qdrant
+- Bind-mounted `./data/qdrant/` persists memories across container restarts
+- OpenMemory MCP handles embedding generation, memory extraction, and MCP tools in one container
 - If the MCP server goes down, agents lose memory tools but continue working — they just won't have recall
-- Image versions are pinned in `docker-compose.yml` — update them periodically and test before deploying
+- Qdrant is pinned to v1.17.0; OpenMemory MCP uses `:latest` — update periodically
 
 ### Serena (local, stdio)
 
@@ -207,7 +159,7 @@ Configure both servers in `.mcp.json`:
   "mcpServers": {
     "mem0": {
       "transport": "sse",
-      "url": "http://localhost:8050/sse"
+      "url": "http://localhost:8765/sse"
     },
     "serena": {
       "command": "uvx",

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Shared utilities for memory system scripts.
 
-# Mem0 stack endpoints
+# OpenMemory MCP stack endpoints
 QDRANT_URL="http://localhost:6333/healthz"
-MEM0_MCP_URL="http://localhost:8050/sse"
+OPENMEMORY_URL="http://localhost:8765"
 
 # Serena MCP server command
 SERENA_CMD="uvx --from git+https://github.com/oraios/serena serena"

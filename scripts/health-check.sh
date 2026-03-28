@@ -8,27 +8,27 @@ source "${SCRIPT_DIR}/lib.sh"
 
 overall_exit=0
 
-echo "Mem0 stack:"
+echo "OpenMemory stack:"
 if check_endpoint "${QDRANT_URL}"; then
-  echo "  qdrant:   OK"
+  echo "  qdrant:          OK"
 else
-  echo "  qdrant:   FAIL"
+  echo "  qdrant:          FAIL"
   overall_exit=1
 fi
 
-if check_endpoint "${MEM0_MCP_URL}"; then
-  echo "  mem0-mcp: OK"
+if check_endpoint "${OPENMEMORY_URL}"; then
+  echo "  openmemory-mcp:  OK"
 else
-  echo "  mem0-mcp: FAIL"
+  echo "  openmemory-mcp:  FAIL"
   overall_exit=1
 fi
 
 echo ""
 echo "Code intelligence:"
 if check_serena; then
-  echo "  serena:   OK (uvx available)"
+  echo "  serena:          OK (uvx available)"
 else
-  echo "  serena:   NOT INSTALLED"
+  echo "  serena:          NOT INSTALLED"
   overall_exit=1
 fi
 
