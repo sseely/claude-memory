@@ -24,15 +24,18 @@ services:
     environment:
       QDRANT_HOST: qdrant
       QDRANT_PORT: "6333"
+      EMBEDDING_MODEL: nomic-embed-text-v2-moe
     volumes:
       - ./vendor/openmemory_memory_utils.py:/usr/src/openmemory/app/utils/memory.py:ro
+      - ./vendor/openmemory_mcp_server.py:/usr/src/openmemory/app/mcp_server.py:ro
+      - ./vendor/openmemory_entrypoint.sh:/usr/src/openmemory/entrypoint.sh:ro
+      - ./vendor/openmemory_warmup.py:/usr/src/openmemory/warmup.py:ro
       - ./data/openmemory/openmemory.db:/usr/src/openmemory/openmemory.db
     depends_on:
       qdrant:
         condition: service_healthy
     restart: unless-stopped
-    command: >
-      sh -c "uvicorn main:app --host 0.0.0.0 --port 8765 --workers 1"
+    command: ["/bin/sh", "/usr/src/openmemory/entrypoint.sh"]
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8765/api/v1/apps/')\""]
       interval: 10s

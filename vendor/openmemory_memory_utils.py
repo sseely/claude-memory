@@ -239,10 +239,18 @@ def get_memory_client(custom_instructions: str = None):
                     # Update Embedder configuration if available
                     if "embedder" in mem0_config and mem0_config["embedder"] is not None:
                         config["embedder"] = mem0_config["embedder"]
-                        
+
                         # Fix Ollama URLs for Docker if needed
                         if config["embedder"].get("provider") == "ollama":
                             config["embedder"] = _fix_ollama_urls(config["embedder"])
+
+                        # Propagate embedding_dims to vector store so the Qdrant
+                        # collection is created with the correct dimension instead
+                        # of QdrantConfig's hardcoded default of 1536.
+                        dims = config["embedder"].get("config", {}).get("embedding_dims")
+                        if dims:
+                            config["vector_store"]["config"]["embedding_model_dims"] = dims
+                            print(f"Set vector store embedding_model_dims={dims} from embedder config")
             else:
                 print("No configuration found in database, using defaults")
                     
