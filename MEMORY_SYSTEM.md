@@ -63,17 +63,17 @@ docker compose up -d
 {
   "mcpServers": {
     "mem0": {
-      "type": "sse",
-      "url": "http://localhost:8765/mcp/claude-code/sse/default"
+      "type": "http",
+      "url": "http://localhost:8765/mcp/claude-code/http/default"
     }
   }
 }
 ```
 
-> **Transport note (verified 2026-06-05):** This image (`mem0/openmemory-mcp:latest`)
-> exposes only SSE transport — `/mcp/{client_name}/sse/{user_id}`. There is no HTTP
-> transport path. Do not attempt to migrate to `"type": "http"` with this image; the
-> SSE config above is correct and current.
+> **Transport note (updated 2026-06-05):** The Docker Hub image (`mem0/openmemory-mcp:latest`,
+> June 2025) exposes only SSE. The source build (`mem0ai/mem0` main branch, rebuilt locally)
+> adds Streamable HTTP transport at `/mcp/{client_name}/http/{user_id}` (merged 2026-03-25).
+> The `~/.claude/.mcp.json` config now uses `"type": "http"` pointing at the local build.
 
 ### Environment Variables
 
@@ -170,8 +170,8 @@ Configure both servers in `.mcp.json`:
 {
   "mcpServers": {
     "mem0": {
-      "type": "sse",
-      "url": "http://localhost:8765/mcp/claude-code/sse/default"  // SSE only — no HTTP transport in this image
+      "type": "http",
+      "url": "http://localhost:8765/mcp/claude-code/http/default"
     },
     "serena": {
       "command": "uvx",
