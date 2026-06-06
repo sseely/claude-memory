@@ -4,3 +4,7 @@ data/
 !.agent-notes/.gitkeep
 plans/
 .claude/
+scratch/
+
+
+.serena/cache/

@@ -15,7 +15,8 @@ services:
       start_period: 30s
 
   openmemory-mcp:
-    image: mem0/openmemory-mcp:latest
+    build:
+      context: /Users/scottseely/git/mem0/openmemory/api
     ports:
       - "127.0.0.1:8765:8765"
     env_file:
@@ -25,6 +26,7 @@ services:
       QDRANT_PORT: "6333"
     volumes:
       - ./vendor/openmemory_memory_utils.py:/usr/src/openmemory/app/utils/memory.py:ro
+      - ./data/openmemory/openmemory.db:/usr/src/openmemory/openmemory.db
     depends_on:
       qdrant:
         condition: service_healthy
@@ -37,3 +39,16 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  openmemory-ui:
+    build:
+      context: /Users/scottseely/git/mem0/openmemory/ui
+    ports:
+      - "127.0.0.1:8766:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8765
+      NEXT_PUBLIC_USER_ID: default
+    depends_on:
+      openmemory-mcp:
+        condition: service_healthy
+    restart: unless-stopped
