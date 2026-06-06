@@ -10,11 +10,19 @@ Two complementary MCP servers:
 
 - **OpenMemory stack** (Docker) — long-term semantic memory
   - Qdrant (port 6333) — vector database
-  - OpenMemory MCP (port 8765) — memory API + MCP tools
+  - OpenMemory MCP (port 8765) — memory API + MCP endpoint for Claude Code
+  - OpenMemory UI (port 8766) — browser dashboard for browsing and managing memories
 - **Serena** (local, stdio) — code intelligence via LSP
   - Symbol-level navigation across 40+ languages
   - Precise editing without reading entire files
   - Claude Code spawns it automatically
+
+The OpenMemory stack is built from the
+[mem0 monorepo](https://github.com/mem0ai/mem0) source rather than the
+Docker Hub image, which was 12 months old at the time of writing. Building
+from source keeps the stack current with active development. See the
+[vendor patches](#vendor-patches) section for integration fixes that are
+applied on top.
 
 See [MEMORY_SYSTEM.md](MEMORY_SYSTEM.md) for the full specification.
 
@@ -22,8 +30,14 @@ See [MEMORY_SYSTEM.md](MEMORY_SYSTEM.md) for the full specification.
 
 - Docker and Docker Compose v2+
 - Python 3.11+ and [uv](https://docs.astral.sh/uv/) (`brew install uv`)
-- `curl` on the host (used by health check scripts)
-- [Ollama](https://ollama.com/) running locally with `llama3.1` and `nomic-embed-text` models pulled
+- [Ollama](https://ollama.com/) running locally with `nomic-embed-text-v2-moe` pulled:
+  ```bash
+  ollama pull nomic-embed-text-v2-moe
+  ```
+- Docker Desktop with [Model Runner](https://docs.docker.com/desktop/features/model-runner/) enabled and model pulled:
+  ```bash
+  docker model pull ai/gpt-oss:120B-UD-Q4_K_XL
+  ```
 - LSP servers for your languages (see MEMORY_SYSTEM.md)
 - [bats-core](https://github.com/bats-core/bats-core) (optional, for tests)
 
@@ -32,9 +46,8 @@ See [MEMORY_SYSTEM.md](MEMORY_SYSTEM.md) for the full specification.
 ```bash
 # 1. Configure environment
 cp .env.example .env
-# Defaults work if Ollama is running with llama3.1 and nomic-embed-text
 
-# 2. Register Serena with Claude Code
+# 2. Register Serena with Claude Code (one-time)
 claude mcp add serena \
   -- uvx --from git+https://github.com/oraios/serena \
   serena start-mcp-server
@@ -48,39 +61,61 @@ claude mcp add serena \
 
 ## Environment variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `USER` | No | `default` | User scope for memories |
-| `LLM_PROVIDER` | — | `ollama` | LLM backend |
-| `LLM_MODEL` | — | `llama3.1:latest` | Extraction model |
-| `EMBEDDER_PROVIDER` | — | `ollama` | Embedding backend |
-| `EMBEDDER_MODEL` | — | `nomic-embed-text` | Embedding model |
-| `EMBEDDER_MODEL_DIMS` | — | `768` | Embedding dimensions (must match model) |
-| `OLLAMA_BASE_URL` | — | `http://host.docker.internal:11434` | Ollama endpoint |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MEM0_DEFAULT_USER_ID` | `default` | User scope for memories |
+| `OPENAI_API_KEY` | `docker` | Passed to OpenMemory's OpenAI client (routed to Model Runner) |
+| `OPENAI_BASE_URL` | `http://model-runner.docker.internal/engines/v1` | Docker Model Runner endpoint |
+| `LLM_PROVIDER` | `openai` | LLM backend |
+| `LLM_MODEL` | `ai/gpt-oss:120B-UD-Q4_K_XL` | Extraction model via Docker Model Runner |
+| `EMBEDDER_PROVIDER` | `ollama` | Embedding backend |
+| `EMBEDDER_MODEL` | `nomic-embed-text-v2-moe` | Embedding model (768-dim MoE, ~100 languages) |
+| `EMBEDDER_MODEL_DIMS` | `768` | Must match the embedding model's output dimensions |
+| `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | Ollama endpoint reachable from Docker |
 
-All defaults are set in `.env.example`. Just copy and start.
+All defaults are set in `.env.example`. Copy it and start.
 
 ## MCP client configuration
 
-Both servers in `~/.claude/.mcp.json`:
+Add both servers to `~/.claude/.mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "mem0": {
-      "transport": "sse",
-      "url": "http://localhost:8765/sse"
+      "type": "http",
+      "url": "http://localhost:8765/mcp/claude-code/http/default"
     },
     "serena": {
-      "command": "uvx",
+      "command": "uv",
       "args": [
-        "--from", "git+https://github.com/oraios/serena",
-        "serena", "start-mcp-server"
+        "--directory", "/path/to/serena",
+        "run", "serena", "start-mcp-server",
+        "--context", "claude-code",
+        "--project", "/path/to/your/project"
       ]
     }
   }
 }
 ```
+
+## Vendor patches
+
+The OpenMemory container is built from source, and three integration
+bugs required patching before it worked with a local Ollama embedder.
+The patches live in `vendor/` and are bind-mounted over the originals
+at container start — the image itself is unchanged.
+
+| File | Patches |
+|------|---------|
+| `vendor/openmemory_memory_utils.py` | Propagates `embedding_dims` from the embedder config into `QdrantConfig.embedding_model_dims`. Without this, the Qdrant collection is always created at 1536 dimensions (the OpenAI default) regardless of the configured embedder. |
+| `vendor/openmemory_mcp_server.py` | Fixes `limit=10` → `top_k=10` in the vector store search call. The mem0 Qdrant store uses `top_k`; the original code passed `limit`, which raised a `TypeError`. |
+| `vendor/openmemory_entrypoint.sh` | Replaces the default startup command. Runs the warm-up script before starting uvicorn. |
+| `vendor/openmemory_warmup.py` | Calls Ollama's `/api/embed` with `keep_alive=-1` before the server starts. This loads the embedding model into memory and pins it there, preventing cold-start timeouts on the first MCP request. |
+
+Note: `docker compose restart` does **not** re-apply volume mount changes.
+If you modify `docker-compose.yml` volumes, use `docker compose up -d` to
+recreate the container.
 
 ## Scripts
 
