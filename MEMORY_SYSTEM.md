@@ -63,12 +63,17 @@ docker compose up -d
 {
   "mcpServers": {
     "mem0": {
-      "transport": "sse",
-      "url": "http://localhost:8765/sse"
+      "type": "sse",
+      "url": "http://localhost:8765/mcp/claude-code/sse/default"
     }
   }
 }
 ```
+
+> **Transport note (verified 2026-06-05):** This image (`mem0/openmemory-mcp:latest`)
+> exposes only SSE transport — `/mcp/{client_name}/sse/{user_id}`. There is no HTTP
+> transport path. Do not attempt to migrate to `"type": "http"` with this image; the
+> SSE config above is correct and current.
 
 ### Environment Variables
 
@@ -148,14 +153,14 @@ team context.
 
 **Key tools provided:**
 
-| Tool | Use |
-|------|-----|
-| `find_symbol` | Find a class, function, or variable by name |
-| `find_referencing_symbols` | Find all callers of a symbol |
-| `get_symbol_definition` | Get full source of a symbol |
-| `insert_after_symbol` | Edit code precisely without reading the file |
-| `replace_symbol` | Replace a symbol's implementation |
-| `activate_project` | Switch Serena to a different repo |
+| Tool                       | Use                                          |
+| -------------------------- | -------------------------------------------- |
+| `find_symbol`              | Find a class, function, or variable by name  |
+| `find_referencing_symbols` | Find all callers of a symbol                 |
+| `get_symbol_definition`    | Get full source of a symbol                  |
+| `insert_after_symbol`      | Edit code precisely without reading the file |
+| `replace_symbol`           | Replace a symbol's implementation            |
+| `activate_project`         | Switch Serena to a different repo            |
 
 ### Combined MCP Configuration
 
@@ -165,8 +170,8 @@ Configure both servers in `.mcp.json`:
 {
   "mcpServers": {
     "mem0": {
-      "transport": "sse",
-      "url": "http://localhost:8765/sse"
+      "type": "sse",
+      "url": "http://localhost:8765/mcp/claude-code/sse/default"  // SSE only — no HTTP transport in this image
     },
     "serena": {
       "command": "uvx",
@@ -327,13 +332,13 @@ A dedicated agent reads local `.agent-notes/` files and decides what enters long
 
 Available tools (provided via MCP):
 
-| Tool | Use When |
-|---|---|
+| Tool              | Use When                                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------------ |
 | `search_memories` | Before starting any task. When encountering unexpected behavior. When you need context you don't have. |
-| `add_memory` | Curator agent only. After sponge-worthy evaluation passes. |
-| `update_memory` | When a stored memory is partially outdated but still relevant. |
-| `delete_memory` | When a stored memory is fully obsolete or incorrect. |
-| `list_memories` | When you need to audit what's stored for a given scope. |
+| `add_memory`      | Curator agent only. After sponge-worthy evaluation passes.                                             |
+| `update_memory`   | When a stored memory is partially outdated but still relevant.                                         |
+| `delete_memory`   | When a stored memory is fully obsolete or incorrect.                                                   |
+| `list_memories`   | When you need to audit what's stored for a given scope.                                                |
 
 ## What This System Replaces
 
